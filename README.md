@@ -270,3 +270,5 @@ Both are optional but can make your library pop!
 
 This project is licensed under the MIT License. It’s permissive and community-friendly—use it, tweak it, share it, just keep the license and copyright.
 
+Big thanks to Grok 3, an AI assistant from xAI, and ChatGPT for helping craft this script and README. Shoutout to the Steam Deck community for keeping the DIY vibes strong!
+
