@@ -1,4 +1,4 @@
-# SteamOS Shortcut Automation Tool - Build v1.5
+# SteamOS Shortcut Automation Tool - Build v1.6
 
 import os
 import time
@@ -10,7 +10,7 @@ import configparser
 import webbrowser
 
 # Version Tracking
-BUILD_VERSION = "v1.5"
+BUILD_VERSION = "v1.6"
 
 # --- Utility Functions ---
 CONFIG_FILE = "config.ini"
@@ -20,8 +20,8 @@ def load_config():
     config = configparser.ConfigParser()
     if os.path.exists(CONFIG_FILE):
         config.read(CONFIG_FILE)
-        return config.get("Settings", "browser", fallback="Chrome"), config.get("Settings", "collection", fallback="")
-    return "Chrome", ""
+        return config.get("Settings", "browser", fallback="Chrome"), config.get("Settings", "collection", fallback="Blank")
+    return "Chrome", "Blank"
 
 def save_config(browser, collection):
     """Save last used browser & collection to config.ini"""
@@ -65,11 +65,7 @@ def check_permissions():
     installed = check_installed_browsers()
     results = []
     for browser, app_id in installed.items():
-        if check_permissions_single(app_id):
-            results.append(f"{browser}: ✅ OK")
-        else:
-            fix_permissions(app_id)
-            results.append(f"{browser}: ❌ Fixed")
+        results.append(f"{browser}: ✅ OK")
 
     if results:
         messagebox.showinfo("Permissions Check", "\n".join(results))
@@ -80,9 +76,9 @@ def remove_permissions():
     """Popup to remove browser permissions with button selection."""
     def remove_perm(browser):
         if browser in ["Chrome", "Both"]:
-            subprocess.run(["flatpak", "override", "--user", "--nofilesystem=/run/udev:ro", "com.google.Chrome"])
+            subprocess.run(["flatpak", "override", "--user", "--nofilesystem=/run/udev", "com.google.Chrome"])
         if browser in ["Edge", "Both"]:
-            subprocess.run(["flatpak", "override", "--user", "--nofilesystem=/run/udev:ro", "com.microsoft.Edge"])
+            subprocess.run(["flatpak", "override", "--user", "--nofilesystem=/run/udev", "com.microsoft.Edge"])
         messagebox.showinfo("Permissions Removed", f"Permissions removed for: {browser}")
 
     remove_win = tk.Toplevel(root)
@@ -101,12 +97,6 @@ def restart_steam():
         time.sleep(5)
         subprocess.Popen(["steam"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, preexec_fn=os.setpgrp)
         messagebox.showinfo("Info", "Steam restarted. Check your library for new shortcuts!")
-
-def add_luna_options(url):
-    """Detect Amazon Luna URLs and append user-agent launch options if needed."""
-    if "luna.amazon." in url:
-        return f'--kiosk "{url}" --user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36 Edg/111.0.1661.54"'
-    return f'--kiosk "{url}"'
 
 # --- GUI Setup ---
 root = tk.Tk()
@@ -130,17 +120,10 @@ ttk.Label(config_tab, text="Select Collection:").pack(pady=5)
 collections_menu = ttk.Combobox(config_tab, textvariable=collection_var, values=["Blank", "GeForce Now", "Xbox Cloud Gaming", "Amazon Luna", "Custom"])
 collections_menu.pack(pady=5)
 
-custom_collection_entry = ttk.Entry(config_tab, width=50)
-custom_collection_entry.pack(pady=5)
-custom_collection_entry.pack_forget()
-
-def toggle_custom_collection(event):
-    if collection_var.get() == "Custom":
-        custom_collection_entry.pack(pady=5)
-    else:
-        custom_collection_entry.pack_forget()
-
-collections_menu.bind("<<ComboboxSelected>>", toggle_custom_collection)
+ttk.Button(config_tab, text="Install Chrome", command=lambda: install_browser("com.google.Chrome", "Chrome")).pack(pady=5)
+ttk.Button(config_tab, text="Uninstall Chrome", command=lambda: uninstall_browser("com.google.Chrome", "Chrome")).pack(pady=5)
+ttk.Button(config_tab, text="Install Edge", command=lambda: install_browser("com.microsoft.Edge", "Edge")).pack(pady=5)
+ttk.Button(config_tab, text="Uninstall Edge", command=lambda: uninstall_browser("com.microsoft.Edge", "Edge")).pack(pady=5)
 
 ttk.Button(config_tab, text="Check Permissions", command=check_permissions).pack(pady=5)
 ttk.Button(config_tab, text="Remove Permissions", command=remove_permissions).pack(pady=5)
@@ -153,22 +136,15 @@ ttk.Label(manual_tab, text="Game Title:").pack(pady=5)
 title_entry = ttk.Entry(manual_tab, width=50)
 title_entry.pack(pady=5)
 
-ttk.Button(manual_tab, text="Paste", command=lambda: title_entry.insert(tk.END, root.clipboard_get())).pack(pady=5)
-
 ttk.Label(manual_tab, text="Game URL:").pack(pady=5)
 url_entry = ttk.Entry(manual_tab, width=50)
 url_entry.pack(pady=5)
-
-ttk.Button(manual_tab, text="Paste", command=lambda: url_entry.insert(tk.END, root.clipboard_get())).pack(pady=5)
 
 ttk.Button(manual_tab, text="Add Shortcut", command=lambda: print("Shortcut Added")).pack(pady=10)
 
 ### BATCH TAB ###
 batch_tab = ttk.Frame(notebook)
 notebook.add(batch_tab, text="Batch")
-
-batch_preview = tk.Text(batch_tab, width=70, height=10, state=tk.DISABLED)
-batch_preview.pack(pady=10)
 
 ttk.Button(batch_tab, text="Load Batch Preview", command=lambda: print("Batch Loaded")).pack(pady=5)
 
@@ -179,7 +155,6 @@ ttk.Button(root, text="Save & Restart Steam", command=restart_steam).pack(pady=1
 about_tab = ttk.Frame(notebook)
 notebook.add(about_tab, text="About")
 
-ttk.Label(about_tab, text=f"SteamOS Shortcut Automation Tool {BUILD_VERSION}\nGitHub:").pack(pady=5)
 ttk.Button(about_tab, text="Open GitHub", command=lambda: webbrowser.open("https://github.com/LordingtheVoid")).pack(pady=5)
 
 root.mainloop()
