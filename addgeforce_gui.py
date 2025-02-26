@@ -9,9 +9,42 @@ def list_to_dict(lst):
     """Convert a list to a dictionary with numeric keys."""
     return {str(i): item for i, item in enumerate(lst)}
 
+def check_installed_browsers():
+    """Return a dictionary of installed browsers with browser name as key and app_id as value."""
+    try:
+        result = subprocess.run(["flatpak", "list", "--app"], stdout=subprocess.PIPE, text=True)
+        output = result.stdout
+    except Exception as e:
+        output = ""
+    browsers = {}
+    if "com.google.Chrome" in output:
+        browsers["Chrome"] = "com.google.Chrome"
+    if "com.microsoft.Edge" in output:
+        browsers["Edge"] = "com.microsoft.Edge"
+    return browsers
+
+def install_browser(app_id, browser_name):
+    # Install browser using flatpak
+    messagebox.showinfo("Install Browser", f"{browser_name} is not installed. Installing {browser_name} now...")
+    try:
+        subprocess.run(["flatpak", "install", "--user", "-y", "flathub", app_id])
+    except Exception as e:
+        messagebox.showerror("Error", f"Failed to install {browser_name}: {e}")
+
+def check_permissions(app_id):
+    """Check if the browser has the required permissions; if not, override them."""
+    try:
+        result = subprocess.run(["flatpak", "info", "--show-permissions", app_id],
+                                stdout=subprocess.PIPE, text=True)
+        if "/run/udev:ro" not in result.stdout:
+            subprocess.run(["flatpak", "override", "--user", "--filesystem=/run/udev:ro", app_id])
+    except Exception as e:
+        messagebox.showerror("Error", f"Error checking permissions for {app_id}: {e}")
+
 def load_shortcuts():
     userdata_path = "/home/deck/.local/share/Steam/userdata"
-    user_ids = [d for d in os.listdir(userdata_path) if os.path.isdir(os.path.join(userdata_path, d))]
+    user_ids = [d for d in os.listdir(userdata_path)
+                if os.path.isdir(os.path.join(userdata_path, d))]
     if len(user_ids) == 1:
         user_id = user_ids[0]
     else:
@@ -31,17 +64,17 @@ def load_shortcuts():
         shortcuts = {"shortcuts": {}}
     return shortcuts
 
-def find_chrome_entry(shortcuts):
-    chrome_entry = None
+def find_browser_entry(shortcuts, browser_name):
+    browser_entry = None
     for key, entry in shortcuts.get('shortcuts', {}).items():
         app_name = entry.get('appname', '').lower()
-        if 'chrome' in app_name:
-            chrome_entry = entry
+        if browser_name.lower() in app_name:
+            browser_entry = entry
             break
-    if chrome_entry is None:
-        messagebox.showerror("Error", "No Chrome entry found. Please add Chrome manually as a non-Steam game first.")
+    if browser_entry is None:
+        messagebox.showerror("Error", f"No {browser_name} entry found. Please add {browser_name} manually as a non-Steam game first.")
         exit(1)
-    return chrome_entry
+    return browser_entry
 
 def save_shortcuts(shortcuts):
     with open(shortcuts_path, "wb") as f:
@@ -58,23 +91,49 @@ def restart_steam():
     )
     messagebox.showinfo("Info", "Steam restarted. Check your library for the new shortcuts!")
 
-# Load shortcuts and find Chrome entry
+# --- Browser Detection & Setup ---
+installed_browsers = check_installed_browsers()
+if not installed_browsers:
+    # If no browsers are installed, prompt to install Chrome by default.
+    response = messagebox.askyesno("No Browser Found", "No compatible browser found. Would you like to install Chrome?")
+    if response:
+        install_browser("com.google.Chrome", "Chrome")
+        installed_browsers = check_installed_browsers()
+    else:
+        messagebox.showerror("Error", "A compatible browser is required. Exiting.")
+        exit(1)
+
+# Load shortcuts
 shortcuts = load_shortcuts()
-chrome_entry = find_chrome_entry(shortcuts)
-exe = chrome_entry['exe']
-start_dir = chrome_entry['StartDir']
+
+# Global variables for selected browser information; default to the first available browser.
+selected_browser_name = list(installed_browsers.keys())[0]
+check_permissions(installed_browsers[selected_browser_name])
+selected_browser_entry = find_browser_entry(shortcuts, selected_browser_name)
+browser_exe = selected_browser_entry['exe']
+browser_app_id = installed_browsers[selected_browser_name]
+start_dir = selected_browser_entry['StartDir']
+
+def update_browser_selection(new_browser):
+    global selected_browser_name, selected_browser_entry, browser_exe, browser_app_id, start_dir
+    selected_browser_name = new_browser
+    check_permissions(installed_browsers[selected_browser_name])
+    selected_browser_entry = find_browser_entry(shortcuts, selected_browser_name)
+    browser_exe = selected_browser_entry['exe']
+    browser_app_id = installed_browsers[selected_browser_name]
+    start_dir = selected_browser_entry['StartDir']
+    messagebox.showinfo("Browser Selected", f"Using {selected_browser_name} for shortcuts.")
 
 def add_game(game_title, game_url):
     launch_options = (
-        f'run --branch=stable --arch=x86_64 --command=/app/bin/chrome --file-forwarding '
-        f'com.google.Chrome @@u @@ --window-size=1024,640 --force-device-scale-factor=1.25 '
-        f'--device-scale-factor=1.25 --kiosk "{game_url}"'
+        f'run --branch=stable --arch=x86_64 --command={browser_exe} --file-forwarding {browser_app_id} @@u @@ '
+        f'--window-size=1024,640 --force-device-scale-factor=1.25 --device-scale-factor=1.25 --kiosk "{game_url}"'
     )
     existing_keys = [int(k) for k in shortcuts['shortcuts'].keys() if k.isdigit()]
     new_key = str(max(existing_keys) + 1) if existing_keys else "0"
     new_entry = {
         "appname": game_title,
-        "exe": exe,
+        "exe": browser_exe,
         "StartDir": start_dir,
         "LaunchOptions": launch_options,
         "icon": "",
@@ -144,6 +203,14 @@ def process_batch():
 # Create the main GUI window
 root = tk.Tk()
 root.title("GeForce Now Shortcut Automation")
+
+# Top frame for browser selection
+top_frame = ttk.Frame(root)
+top_frame.pack(pady=5)
+ttk.Label(top_frame, text="Select Browser:").pack(side=tk.LEFT, padx=5)
+browser_var = tk.StringVar(value=selected_browser_name)
+browser_menu = ttk.OptionMenu(top_frame, browser_var, selected_browser_name, *installed_browsers.keys(), command=update_browser_selection)
+browser_menu.pack(side=tk.LEFT, padx=5)
 
 notebook = ttk.Notebook(root)
 notebook.pack(fill="both", expand=True)
