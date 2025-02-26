@@ -4,14 +4,32 @@ import subprocess
 import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
 import vdf
+import configparser
 
 # --- Utility Functions ---
+CONFIG_FILE = "config.ini"
+
+def load_config():
+    """Load last used browser & collection from config.ini"""
+    config = configparser.ConfigParser()
+    if os.path.exists(CONFIG_FILE):
+        config.read(CONFIG_FILE)
+        return config.get("Settings", "browser", fallback="Chrome"), config.get("Settings", "collection", fallback="GeForce Now")
+    return "Chrome", "GeForce Now"
+
+def save_config(browser, collection):
+    """Save last used browser & collection to config.ini"""
+    config = configparser.ConfigParser()
+    config["Settings"] = {"browser": browser, "collection": collection}
+    with open(CONFIG_FILE, "w") as configfile:
+        config.write(configfile)
+
 def list_to_dict(lst):
     """Convert a list to a dictionary with numeric keys."""
     return {str(i): item for i, item in enumerate(lst)}
 
 def check_installed_browsers():
-    """Return a dictionary of installed browsers with browser name as key and app_id as value."""
+    """Return installed browsers."""
     try:
         result = subprocess.run(["flatpak", "list", "--app"], stdout=subprocess.PIPE, text=True)
         output = result.stdout
@@ -27,27 +45,13 @@ def check_installed_browsers():
     return browsers
 
 def install_browser(app_id, browser_name):
-    """Prompt to install a browser if not installed."""
-    response = messagebox.askyesno(f"Install {browser_name}", f"{browser_name} is not installed. Install it now?")
-    if response:
-        try:
-            subprocess.run(["flatpak", "install", "--user", "-y", "flathub", app_id])
-            messagebox.showinfo("Success", f"{browser_name} installed! Restart the script to use it.")
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to install {browser_name}: {e}")
-
-def uninstall_browser(app_id, browser_name):
-    """Prompt to uninstall a browser."""
-    response = messagebox.askyesno(f"Uninstall {browser_name}", f"Are you sure you want to remove {browser_name}?")
-    if response:
-        try:
-            subprocess.run(["flatpak", "uninstall", "--user", "-y", app_id])
-            messagebox.showinfo("Success", f"{browser_name} has been uninstalled.")
-        except Exception as e:
-            messagebox.showerror("Error", f"Failed to uninstall {browser_name}: {e}")
+    """Install missing browser."""
+    if messagebox.askyesno(f"Install {browser_name}", f"{browser_name} is not installed. Install it now?"):
+        subprocess.run(["flatpak", "install", "--user", "-y", "flathub", app_id])
+        messagebox.showinfo("Success", f"{browser_name} installed! Restart the script to use it.")
 
 def check_permissions(app_id):
-    """Check if the browser has the required permissions."""
+    """Check if browser has correct permissions."""
     try:
         result = subprocess.run(["flatpak", "info", "--show-permissions", app_id], stdout=subprocess.PIPE, text=True)
         return "/run/udev:ro" in result.stdout
@@ -55,37 +59,38 @@ def check_permissions(app_id):
         return False
 
 def fix_permissions(app_id):
-    """Apply missing Flatpak permissions."""
+    """Apply missing permissions."""
     subprocess.run(["flatpak", "override", "--user", "--filesystem=/run/udev:ro", app_id])
     messagebox.showinfo("Permissions Fixed", f"Permissions updated for {app_id}")
 
 def manage_permissions():
-    """Check installed browsers and apply permissions if needed."""
+    """Check installed browsers & apply fixes if needed."""
     installed = check_installed_browsers()
-    chrome_installed = "Chrome" in installed
-    edge_installed = "Edge" in installed
-    if not chrome_installed and not edge_installed:
-        messagebox.showinfo("Permissions Check", "No browsers installed to check.")
-        return
+    missing = [b for b in installed if not check_permissions(installed[b])]
     
-    missing = []
-    if chrome_installed and not check_permissions(installed["Chrome"]):
-        missing.append("Chrome")
-    if edge_installed and not check_permissions(installed["Edge"]):
-        missing.append("Edge")
-
     if not missing:
         messagebox.showinfo("Permissions Check", "Permissions are correct for installed browsers.")
         return
     
-    choice = messagebox.askyesno("Fix Permissions", f"Permissions missing for: {', '.join(missing)}.\nWould you like to apply fixes?")
+    choice = messagebox.askyesno("Fix Permissions", f"Permissions missing for: {', '.join(missing)}.\nApply fixes?")
     if choice:
-        if "Chrome" in missing:
-            fix_permissions(installed["Chrome"])
-        if "Edge" in missing:
-            fix_permissions(installed["Edge"])
+        for browser in missing:
+            fix_permissions(installed[browser])
 
-# --- Load Steam Shortcuts ---
+def is_steam_running():
+    """Check if Steam is running before restarting."""
+    result = subprocess.run(["pgrep", "-x", "steam"], stdout=subprocess.PIPE)
+    return result.returncode == 0
+
+def restart_steam():
+    """Restart Steam only if it's running."""
+    if is_steam_running():
+        os.system("steam -shutdown")
+        time.sleep(5)
+        subprocess.Popen(["steam"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, preexec_fn=os.setpgrp)
+        messagebox.showinfo("Info", "Steam restarted. Check your library for new shortcuts!")
+
+# --- Load & Save Shortcuts ---
 def load_shortcuts():
     userdata_path = "/home/deck/.local/share/Steam/userdata"
     user_ids = [d for d in os.listdir(userdata_path) if os.path.isdir(os.path.join(userdata_path, d))]
@@ -104,7 +109,6 @@ def load_shortcuts():
             with open(shortcuts_path, "rb") as f:
                 shortcuts = vdf.binary_load(f)
         except SyntaxError:
-            messagebox.showwarning("Warning", f"{shortcuts_path} is corrupted. Starting with an empty shortcuts dictionary.")
             shortcuts = {"shortcuts": {}}
     else:
         shortcuts = {"shortcuts": {}}
@@ -115,61 +119,64 @@ def save_shortcuts(shortcuts):
     with open(shortcuts_path, "wb") as f:
         vdf.binary_dump(shortcuts, f)
 
-def restart_steam():
-    os.system("steam -shutdown")
-    time.sleep(5)
-    subprocess.Popen(["steam"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, preexec_fn=os.setpgrp)
-    messagebox.showinfo("Info", "Steam restarted. Check your library for the new shortcuts!")
-
 # --- GUI Setup ---
 root = tk.Tk()
 root.title("GeForce Now Shortcut Automation")
 
-# Mode Selection
-mode_frame = ttk.LabelFrame(root, text="Mode Selection", padding=10)
-mode_frame.pack(pady=10, fill="x")
-mode_var = tk.StringVar(value="Interactive")
-ttk.Radiobutton(mode_frame, text="Interactive Mode", variable=mode_var, value="Interactive").pack(side=tk.LEFT, padx=5)
-ttk.Radiobutton(mode_frame, text="Batch Mode", variable=mode_var, value="Batch").pack(side=tk.LEFT, padx=5)
+# Load preferences
+last_browser, last_collection = load_config()
 
 # Browser Selection
 browser_frame = ttk.LabelFrame(root, text="Browser Management", padding=10)
 browser_frame.pack(pady=10, fill="x")
 installed = check_installed_browsers()
 
-if "Chrome" not in installed:
-    ttk.Button(browser_frame, text="Install Chrome", command=lambda: install_browser("com.google.Chrome", "Chrome")).pack(side=tk.LEFT, padx=5)
-else:
-    ttk.Button(browser_frame, text="Uninstall Chrome", command=lambda: uninstall_browser("com.google.Chrome", "Chrome")).pack(side=tk.LEFT, padx=5)
-
-if "Edge" not in installed:
-    ttk.Button(browser_frame, text="Install Edge", command=lambda: install_browser("com.microsoft.Edge", "Edge")).pack(side=tk.LEFT, padx=5)
-else:
-    ttk.Button(browser_frame, text="Uninstall Edge", command=lambda: uninstall_browser("com.microsoft.Edge", "Edge")).pack(side=tk.LEFT, padx=5)
+browser_var = tk.StringVar(value=last_browser)
+browser_menu = ttk.OptionMenu(browser_frame, browser_var, *installed.keys())
+browser_menu.pack(side=tk.LEFT, padx=5)
 
 ttk.Button(browser_frame, text="Check Permissions", command=manage_permissions).pack(side=tk.LEFT, padx=5)
 
 # Collection Selection
 collection_frame = ttk.LabelFrame(root, text="Game Collection", padding=10)
 collection_frame.pack(pady=10, fill="x")
-ttk.Label(collection_frame, text="Select Collection:").pack(side=tk.LEFT, padx=5)
-collection_var = tk.StringVar(value="GeForce Now")
+
 collections = ["GeForce Now", "Xbox Cloud", "Amazon Luna", "Custom"]
+collection_var = tk.StringVar(value=last_collection)
 collection_menu = ttk.OptionMenu(collection_frame, collection_var, *collections)
 collection_menu.pack(side=tk.LEFT, padx=5)
 
-# Add Game UI
-game_frame = ttk.LabelFrame(root, text="Add Game", padding=10)
-game_frame.pack(pady=10, fill="x")
-ttk.Label(game_frame, text="Game Title:").pack()
-title_entry = ttk.Entry(game_frame, width=50)
-title_entry.pack()
-ttk.Label(game_frame, text="Game URL:").pack()
-url_entry = ttk.Entry(game_frame, width=50)
-url_entry.pack()
+def update_collection():
+    if collection_var.get() == "Custom":
+        custom_name = simpledialog.askstring("Custom Collection", "Enter your collection name:")
+        if custom_name:
+            collection_var.set(custom_name)
 
-ttk.Button(game_frame, text="Add Game", command=lambda: messagebox.showinfo("Added", "Game added!")).pack(pady=5)
+ttk.Button(collection_frame, text="Set Custom", command=update_collection).pack(side=tk.LEFT, padx=5)
 
-ttk.Button(root, text="Finish & Restart Steam", command=restart_steam).pack(pady=10)
+# Batch Mode Preview
+batch_frame = ttk.LabelFrame(root, text="Batch Mode Preview", padding=10)
+batch_frame.pack(pady=10, fill="x")
+
+batch_preview = tk.Text(batch_frame, width=70, height=10, state=tk.DISABLED)
+batch_preview.pack()
+
+def load_batch_preview():
+    """Load batch file preview."""
+    if os.path.exists("batchadd.txt"):
+        with open("batchadd.txt", "r") as f:
+            data = f.readlines()
+            readable_data = "\n".join([f"{line.split(': ')[0]} - {line.split(': ')[1][:7]}...{line.split(': ')[1][-7:]}" for line in data if ": " in line])
+            batch_preview.config(state=tk.NORMAL)
+            batch_preview.delete("1.0", tk.END)
+            batch_preview.insert(tk.END, readable_data)
+            batch_preview.config(state=tk.DISABLED)
+    else:
+        messagebox.showerror("Error", "batchadd.txt not found.")
+
+load_batch_preview()
+
+# Restart Steam Button
+ttk.Button(root, text="Finish & Restart Steam", command=lambda: [save_config(browser_var.get(), collection_var.get()), restart_steam()]).pack(pady=10)
 
 root.mainloop()
