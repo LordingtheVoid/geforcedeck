@@ -113,42 +113,27 @@ root = tk.Tk()
 root.title("GeForce Now Shortcut Automation")
 
 # Browser Selection Frame
-top_frame = ttk.Frame(root)
-top_frame.pack(pady=5)
+browser_frame = ttk.LabelFrame(root, text="Browser Selection", padding=10)
+browser_frame.pack(pady=10, fill="x")
 
-ttk.Label(top_frame, text="Select Browser:").pack(side=tk.LEFT, padx=5)
+ttk.Label(browser_frame, text="Select Browser:").pack(side=tk.LEFT, padx=5)
 browser_var = tk.StringVar(value=selected_browser_name)
-browser_menu = ttk.OptionMenu(top_frame, browser_var, selected_browser_name, *installed_browsers.keys())
+browser_menu = ttk.OptionMenu(browser_frame, browser_var, selected_browser_name, *installed_browsers.keys())
 browser_menu.pack(side=tk.LEFT, padx=5)
 
-def manage_permissions():
-    """Allow users to check, fix, or reset permissions for the selected browser."""
-    app_id = installed_browsers[browser_var.get()]
-    
-    permissions_ok = check_permissions(app_id)
-    action = simpledialog.askstring(
-        "Manage Permissions",
-        f"Permissions for {browser_var.get()} are {'OK' if permissions_ok else 'MISSING'}.\n\n"
-        "Enter 'fix' to apply required permissions or 'reset' to remove all overrides:"
-    )
-    
-    if action == "fix":
-        fix_permissions(app_id)
-    elif action == "reset":
-        reset_permissions(app_id)
+ttk.Button(browser_frame, text="Install Chrome", command=lambda: install_browser("com.google.Chrome", "Chrome")).pack(side=tk.LEFT, padx=5)
+ttk.Button(browser_frame, text="Install Edge", command=lambda: install_browser("com.microsoft.Edge", "Edge")).pack(side=tk.LEFT, padx=5)
 
-permissions_button = ttk.Button(top_frame, text="Manage Permissions", command=manage_permissions)
-permissions_button.pack(side=tk.LEFT, padx=5)
+ttk.Button(browser_frame, text="Manage Permissions", command=lambda: fix_permissions(installed_browsers[browser_var.get()])).pack(side=tk.LEFT, padx=5)
 
-# --- Collection Selection ---
-collections_frame = ttk.Frame(root)
-collections_frame.pack(pady=5)
+# Collection Selection Frame
+collection_frame = ttk.LabelFrame(root, text="Game Collection", padding=10)
+collection_frame.pack(pady=10, fill="x")
 
-ttk.Label(collections_frame, text="Select Collection:").pack(side=tk.LEFT, padx=5)
+ttk.Label(collection_frame, text="Select Collection:").pack(side=tk.LEFT, padx=5)
 collection_var = tk.StringVar(value="GeForce Now")
-
 collections = ["GeForce Now", "Xbox Cloud", "Amazon Luna", "Custom"]
-collection_menu = ttk.OptionMenu(collections_frame, collection_var, *collections)
+collection_menu = ttk.OptionMenu(collection_frame, collection_var, *collections)
 collection_menu.pack(side=tk.LEFT, padx=5)
 
 def update_collection():
@@ -157,19 +142,18 @@ def update_collection():
         if custom_name:
             collection_var.set(custom_name)
 
-update_collection_button = ttk.Button(collections_frame, text="Set Custom", command=update_collection)
-update_collection_button.pack(side=tk.LEFT, padx=5)
+ttk.Button(collection_frame, text="Set Custom", command=update_collection).pack(side=tk.LEFT, padx=5)
 
-# --- Interactive Mode ---
-interactive_frame = ttk.Frame(root)
-interactive_frame.pack(pady=10)
+# Game Addition Frame
+game_frame = ttk.LabelFrame(root, text="Add Game", padding=10)
+game_frame.pack(pady=10, fill="x")
 
-ttk.Label(interactive_frame, text="Game Title:").pack()
-title_entry = ttk.Entry(interactive_frame, width=50)
+ttk.Label(game_frame, text="Game Title:").pack()
+title_entry = ttk.Entry(game_frame, width=50)
 title_entry.pack()
 
-ttk.Label(interactive_frame, text="Game URL:").pack()
-url_entry = ttk.Entry(interactive_frame, width=50)
+ttk.Label(game_frame, text="Game URL:").pack()
+url_entry = ttk.Entry(game_frame, width=50)
 url_entry.pack()
 
 def add_game():
@@ -184,10 +168,8 @@ def add_game():
     else:
         messagebox.showwarning("Warning", "Please enter both game title and URL.")
 
-add_button = ttk.Button(interactive_frame, text="Add Game", command=add_game)
-add_button.pack(pady=5)
+ttk.Button(game_frame, text="Add Game", command=add_game).pack(pady=5)
 
-finish_button = ttk.Button(root, text="Finish & Restart Steam", command=restart_steam)
-finish_button.pack(pady=10)
+ttk.Button(root, text="Finish & Restart Steam", command=restart_steam).pack(pady=10)
 
 root.mainloop()
