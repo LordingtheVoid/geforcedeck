@@ -1,4 +1,4 @@
-# GeForce Now Shortcut Automation - Build v1.1
+# SteamOS Shortcut Automation Tool - Build v1.2
 
 import os
 import time
@@ -7,9 +7,10 @@ import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
 import vdf
 import configparser
+import webbrowser
 
 # Version Tracking
-BUILD_VERSION = "v1.1"
+BUILD_VERSION = "v1.2"
 
 # --- Utility Functions ---
 CONFIG_FILE = "config.ini"
@@ -19,8 +20,8 @@ def load_config():
     config = configparser.ConfigParser()
     if os.path.exists(CONFIG_FILE):
         config.read(CONFIG_FILE)
-        return config.get("Settings", "browser", fallback="Chrome"), config.get("Settings", "collection", fallback="GeForce Now")
-    return "Chrome", "GeForce Now"
+        return config.get("Settings", "browser", fallback="Chrome"), config.get("Settings", "collection", fallback="Steam Shortcuts")
+    return "Chrome", "Steam Shortcuts"
 
 def save_config(browser, collection):
     """Save last used browser & collection to config.ini"""
@@ -97,26 +98,29 @@ def restart_steam():
 def update_browser_options():
     """Dynamically update available browser options."""
     installed = check_installed_browsers()
-    browser_menu["menu"].delete(0, "end")  # Clear previous options
+    browser_menu["menu"].delete(0, "end")  
     for browser in installed.keys():
         browser_menu["menu"].add_command(label=browser, command=lambda v=browser: browser_var.set(v))
     if browser_var.get() not in installed:
-        browser_var.set(next(iter(installed), "Chrome"))  # Default to first available browser
+        browser_var.set(next(iter(installed), "Chrome"))  
 
-    # Show install buttons if browser is missing
     if "Chrome" not in installed:
         install_chrome_btn.pack()
+        uninstall_chrome_btn.pack_forget()
     else:
         install_chrome_btn.pack_forget()
+        uninstall_chrome_btn.pack()
 
     if "Edge" not in installed:
         install_edge_btn.pack()
+        uninstall_edge_btn.pack_forget()
     else:
         install_edge_btn.pack_forget()
+        uninstall_edge_btn.pack()
 
 # --- GUI Setup ---
 root = tk.Tk()
-root.title(f"GeForce Now Shortcut Automation {BUILD_VERSION}")
+root.title(f"SteamOS Shortcut Automation Tool {BUILD_VERSION}")
 
 notebook = ttk.Notebook(root)
 notebook.pack(expand=True, fill="both")
@@ -128,44 +132,43 @@ last_browser, last_collection = load_config()
 config_tab = ttk.Frame(notebook)
 notebook.add(config_tab, text="Config")
 
-installed_browsers = check_installed_browsers()
 browser_var = tk.StringVar(value=last_browser)
 
 ttk.Label(config_tab, text="Select Browser:").pack(pady=5)
-browser_menu = ttk.OptionMenu(config_tab, browser_var, *installed_browsers.keys())
+browser_menu = ttk.OptionMenu(config_tab, browser_var, *check_installed_browsers().keys())
 browser_menu.pack(pady=5)
-
-ttk.Button(config_tab, text="Check Permissions", command=check_permissions).pack(pady=5)
 
 install_chrome_btn = ttk.Button(config_tab, text="Install Chrome", command=lambda: install_browser("com.google.Chrome", "Chrome"))
 install_edge_btn = ttk.Button(config_tab, text="Install Edge", command=lambda: install_browser("com.microsoft.Edge", "Edge"))
 
+uninstall_chrome_btn = ttk.Button(config_tab, text="Uninstall Chrome", command=lambda: uninstall_browser("com.google.Chrome", "Chrome"))
+uninstall_edge_btn = ttk.Button(config_tab, text="Uninstall Edge", command=lambda: uninstall_browser("com.microsoft.Edge", "Edge"))
+
+ttk.Button(config_tab, text="Check Permissions", command=check_permissions).pack(pady=5)
+
 update_browser_options()
 
-### BATCH TAB ###
-batch_tab = ttk.Frame(notebook)
-notebook.add(batch_tab, text="Batch")
+### MANUAL TAB ###
+manual_tab = ttk.Frame(notebook)
+notebook.add(manual_tab, text="Manual")
 
-batch_preview = tk.Text(batch_tab, width=70, height=10, state=tk.DISABLED)
-batch_preview.pack(pady=10)
+ttk.Button(manual_tab, text="Paste", command=lambda: title_entry.insert(tk.END, root.clipboard_get())).pack(side=tk.LEFT, padx=5)
+title_entry = ttk.Entry(manual_tab, width=50)
+title_entry.pack(pady=5)
 
-def load_batch_preview():
-    """Load batch file preview."""
-    if os.path.exists("batchadd.txt"):
-        with open("batchadd.txt", "r") as f:
-            data = f.readlines()
-            readable_data = "\n".join([f"{line.split(': ')[0]} - {line.split(': ')[1][:7]}...{line.split(': ')[1][-7:]}" for line in data if ": " in line])
-            batch_preview.config(state=tk.NORMAL)
-            batch_preview.delete("1.0", tk.END)
-            batch_preview.insert(tk.END, readable_data)
-            batch_preview.config(state=tk.DISABLED)
-    else:
-        messagebox.showerror("Error", "batchadd.txt not found.")
+ttk.Button(manual_tab, text="Paste", command=lambda: url_entry.insert(tk.END, root.clipboard_get())).pack(side=tk.LEFT, padx=5)
+url_entry = ttk.Entry(manual_tab, width=50)
+url_entry.pack(pady=5)
 
-ttk.Button(batch_tab, text="Load Batch Preview", command=load_batch_preview).pack(pady=5)
+### ABOUT TAB ###
+about_tab = ttk.Frame(notebook)
+notebook.add(about_tab, text="About")
+
+ttk.Label(about_tab, text=f"SteamOS Shortcut Automation Tool {BUILD_VERSION}\nGitHub:").pack(pady=5)
+ttk.Button(about_tab, text="Open GitHub", command=lambda: webbrowser.open("https://github.com/LordingtheVoid")).pack(pady=5)
 
 # Restart Steam Button
 ttk.Button(root, text="Save & Restart Steam", command=lambda: [save_config(browser_var.get(), last_collection), restart_steam()]).pack(pady=10)
 
-update_browser_options()  # Ensure dropdown is updated on launch
+update_browser_options()
 root.mainloop()
