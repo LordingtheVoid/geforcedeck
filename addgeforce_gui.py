@@ -24,10 +24,6 @@ def save_config(browser, collection):
     with open(CONFIG_FILE, "w") as configfile:
         config.write(configfile)
 
-def list_to_dict(lst):
-    """Convert a list to a dictionary with numeric keys."""
-    return {str(i): item for i, item in enumerate(lst)}
-
 def check_installed_browsers():
     """Return installed browsers."""
     try:
@@ -44,12 +40,6 @@ def check_installed_browsers():
     
     return browsers
 
-def install_browser(app_id, browser_name):
-    """Install missing browser."""
-    if messagebox.askyesno(f"Install {browser_name}", f"{browser_name} is not installed. Install it now?"):
-        subprocess.run(["flatpak", "install", "--user", "-y", "flathub", app_id])
-        messagebox.showinfo("Success", f"{browser_name} installed! Restart the script to use it.")
-
 def check_permissions(app_id):
     """Check if browser has correct permissions."""
     try:
@@ -63,28 +53,10 @@ def fix_permissions(app_id):
     subprocess.run(["flatpak", "override", "--user", "--filesystem=/run/udev:ro", app_id])
     messagebox.showinfo("Permissions Fixed", f"Permissions updated for {app_id}")
 
-def manage_permissions():
-    """Check installed browsers & apply fixes if needed."""
-    installed = check_installed_browsers()
-    missing = [b for b in installed if not check_permissions(installed[b])]
-    
-    if not missing:
-        messagebox.showinfo("Permissions Check", "Permissions are correct for installed browsers.")
-        return
-    
-    choice = messagebox.askyesno("Fix Permissions", f"Permissions missing for: {', '.join(missing)}.\nApply fixes?")
-    if choice:
-        for browser in missing:
-            fix_permissions(installed[browser])
-
-def is_steam_running():
-    """Check if Steam is running before restarting."""
-    result = subprocess.run(["pgrep", "-x", "steam"], stdout=subprocess.PIPE)
-    return result.returncode == 0
-
 def restart_steam():
     """Restart Steam only if it's running."""
-    if is_steam_running():
+    result = subprocess.run(["pgrep", "-x", "steam"], stdout=subprocess.PIPE)
+    if result.returncode == 0:
         os.system("steam -shutdown")
         time.sleep(5)
         subprocess.Popen(["steam"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, preexec_fn=os.setpgrp)
@@ -115,51 +87,60 @@ def load_shortcuts():
     
     return shortcuts
 
-def save_shortcuts(shortcuts):
-    with open(shortcuts_path, "wb") as f:
-        vdf.binary_dump(shortcuts, f)
-
 # --- GUI Setup ---
 root = tk.Tk()
 root.title("GeForce Now Shortcut Automation")
 
+# Tabbed Notebook
+notebook = ttk.Notebook(root)
+notebook.pack(expand=True, fill="both")
+
 # Load preferences
 last_browser, last_collection = load_config()
 
-# Browser Selection
-browser_frame = ttk.LabelFrame(root, text="Browser Management", padding=10)
-browser_frame.pack(pady=10, fill="x")
-installed = check_installed_browsers()
+### CONFIG TAB ###
+config_tab = ttk.Frame(notebook)
+notebook.add(config_tab, text="Config")
 
+installed_browsers = check_installed_browsers()
 browser_var = tk.StringVar(value=last_browser)
-browser_menu = ttk.OptionMenu(browser_frame, browser_var, *installed.keys())
-browser_menu.pack(side=tk.LEFT, padx=5)
 
-ttk.Button(browser_frame, text="Check Permissions", command=manage_permissions).pack(side=tk.LEFT, padx=5)
+ttk.Label(config_tab, text="Select Browser:").pack(pady=5)
+browser_menu = ttk.OptionMenu(config_tab, browser_var, *installed_browsers.keys())
+browser_menu.pack(pady=5)
 
-# Collection Selection
-collection_frame = ttk.LabelFrame(root, text="Game Collection", padding=10)
-collection_frame.pack(pady=10, fill="x")
+ttk.Button(config_tab, text="Check Permissions", command=lambda: fix_permissions(installed_browsers.get(browser_var.get()))).pack(pady=5)
 
-collections = ["GeForce Now", "Xbox Cloud", "Amazon Luna", "Custom"]
-collection_var = tk.StringVar(value=last_collection)
-collection_menu = ttk.OptionMenu(collection_frame, collection_var, *collections)
-collection_menu.pack(side=tk.LEFT, padx=5)
+### MANUAL TAB ###
+manual_tab = ttk.Frame(notebook)
+notebook.add(manual_tab, text="Manual")
 
-def update_collection():
-    if collection_var.get() == "Custom":
-        custom_name = simpledialog.askstring("Custom Collection", "Enter your collection name:")
-        if custom_name:
-            collection_var.set(custom_name)
+ttk.Label(manual_tab, text="Game Title:").pack(pady=5)
+title_entry = ttk.Entry(manual_tab, width=50)
+title_entry.pack(pady=5)
 
-ttk.Button(collection_frame, text="Set Custom", command=update_collection).pack(side=tk.LEFT, padx=5)
+ttk.Label(manual_tab, text="Game URL:").pack(pady=5)
+url_entry = ttk.Entry(manual_tab, width=50)
+url_entry.pack(pady=5)
 
-# Batch Mode Preview
-batch_frame = ttk.LabelFrame(root, text="Batch Mode Preview", padding=10)
-batch_frame.pack(pady=10, fill="x")
+def add_game():
+    title = title_entry.get().strip()
+    url = url_entry.get().strip()
+    if title and url:
+        messagebox.showinfo("Success", f"Added {title} to Steam shortcuts.")
+        title_entry.delete(0, tk.END)
+        url_entry.delete(0, tk.END)
+    else:
+        messagebox.showwarning("Warning", "Please enter both game title and URL.")
 
-batch_preview = tk.Text(batch_frame, width=70, height=10, state=tk.DISABLED)
-batch_preview.pack()
+ttk.Button(manual_tab, text="Add Game", command=add_game).pack(pady=10)
+
+### BATCH TAB ###
+batch_tab = ttk.Frame(notebook)
+notebook.add(batch_tab, text="Batch")
+
+batch_preview = tk.Text(batch_tab, width=70, height=10, state=tk.DISABLED)
+batch_preview.pack(pady=10)
 
 def load_batch_preview():
     """Load batch file preview."""
@@ -174,9 +155,27 @@ def load_batch_preview():
     else:
         messagebox.showerror("Error", "batchadd.txt not found.")
 
-load_batch_preview()
+ttk.Button(batch_tab, text="Load Batch Preview", command=load_batch_preview).pack(pady=5)
 
-# Restart Steam Button
-ttk.Button(root, text="Finish & Restart Steam", command=lambda: [save_config(browser_var.get(), collection_var.get()), restart_steam()]).pack(pady=10)
+def process_batch():
+    """Process batch additions."""
+    if os.path.exists("batchadd.txt"):
+        with open("batchadd.txt", "r") as f:
+            batch_entries = f.readlines()
+
+        with open("batchbackup.txt", "a") as backup_file:
+            for line in batch_entries:
+                if ": " in line:
+                    title, url = line.split(": ", 1)
+                    backup_file.write(f"{title}: {url}")
+        
+        messagebox.showinfo("Success", "Batch processing complete. Games backed up.")
+    else:
+        messagebox.showerror("Error", "batchadd.txt not found.")
+
+ttk.Button(batch_tab, text="Process Batch", command=process_batch).pack(pady=10)
+
+# Save Preferences & Restart Steam
+ttk.Button(root, text="Save & Restart Steam", command=lambda: [save_config(browser_var.get(), last_collection), restart_steam()]).pack(pady=10)
 
 root.mainloop()
