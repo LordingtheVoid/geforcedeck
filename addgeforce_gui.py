@@ -1,4 +1,4 @@
-# SteamOS Shortcut Automation Tool - Build v1.2
+# SteamOS Shortcut Automation Tool - Build v1.3
 
 import os
 import time
@@ -10,7 +10,7 @@ import configparser
 import webbrowser
 
 # Version Tracking
-BUILD_VERSION = "v1.2"
+BUILD_VERSION = "v1.3"
 
 # --- Utility Functions ---
 CONFIG_FILE = "config.ini"
@@ -74,26 +74,23 @@ def check_permissions():
     else:
         messagebox.showinfo("Permissions Fixed", f"Permissions updated for: {', '.join(fixed)}")
 
-def check_permissions_single(app_id):
-    """Check if browser has correct permissions."""
-    try:
-        result = subprocess.run(["flatpak", "info", "--show-permissions", app_id], stdout=subprocess.PIPE, text=True)
-        return "/run/udev:ro" in result.stdout
-    except Exception:
-        return False
+def remove_permissions():
+    """Popup to remove browser permissions."""
+    choice = simpledialog.askstring("Remove Permissions", "Select: Chrome, Edge, Both, or Cancel")
+    if choice:
+        choice = choice.lower()
+        if choice in ["chrome", "both"]:
+            subprocess.run(["flatpak", "override", "--user", "--nofilesystem=/run/udev:ro", "com.google.Chrome"])
+        if choice in ["edge", "both"]:
+            subprocess.run(["flatpak", "override", "--user", "--nofilesystem=/run/udev:ro", "com.microsoft.Edge"])
+        if choice in ["chrome", "edge", "both"]:
+            messagebox.showinfo("Permissions Removed", f"Permissions removed for: {choice.capitalize()}")
 
-def fix_permissions(app_id):
-    """Apply missing permissions."""
-    subprocess.run(["flatpak", "override", "--user", "--filesystem=/run/udev:ro", app_id])
-
-def restart_steam():
-    """Restart Steam only if it's running."""
-    result = subprocess.run(["pgrep", "-x", "steam"], stdout=subprocess.PIPE)
-    if result.returncode == 0:
-        os.system("steam -shutdown")
-        time.sleep(5)
-        subprocess.Popen(["steam"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, preexec_fn=os.setpgrp)
-        messagebox.showinfo("Info", "Steam restarted. Check your library for new shortcuts!")
+def add_luna_options(url):
+    """Detect Amazon Luna URLs and append user-agent launch options if needed."""
+    if "luna.amazon." in url:
+        return f'--kiosk "{url}" --user-agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36 Edg/111.0.1661.54"'
+    return f'--kiosk "{url}"'
 
 def update_browser_options():
     """Dynamically update available browser options."""
@@ -104,20 +101,6 @@ def update_browser_options():
     if browser_var.get() not in installed:
         browser_var.set(next(iter(installed), "Chrome"))  
 
-    if "Chrome" not in installed:
-        install_chrome_btn.pack()
-        uninstall_chrome_btn.pack_forget()
-    else:
-        install_chrome_btn.pack_forget()
-        uninstall_chrome_btn.pack()
-
-    if "Edge" not in installed:
-        install_edge_btn.pack()
-        uninstall_edge_btn.pack_forget()
-    else:
-        install_edge_btn.pack_forget()
-        uninstall_edge_btn.pack()
-
 # --- GUI Setup ---
 root = tk.Tk()
 root.title(f"SteamOS Shortcut Automation Tool {BUILD_VERSION}")
@@ -125,26 +108,18 @@ root.title(f"SteamOS Shortcut Automation Tool {BUILD_VERSION}")
 notebook = ttk.Notebook(root)
 notebook.pack(expand=True, fill="both")
 
-# Load preferences
-last_browser, last_collection = load_config()
-
 ### CONFIG TAB ###
 config_tab = ttk.Frame(notebook)
 notebook.add(config_tab, text="Config")
 
-browser_var = tk.StringVar(value=last_browser)
+browser_var = tk.StringVar(value=load_config()[0])
 
 ttk.Label(config_tab, text="Select Browser:").pack(pady=5)
 browser_menu = ttk.OptionMenu(config_tab, browser_var, *check_installed_browsers().keys())
 browser_menu.pack(pady=5)
 
-install_chrome_btn = ttk.Button(config_tab, text="Install Chrome", command=lambda: install_browser("com.google.Chrome", "Chrome"))
-install_edge_btn = ttk.Button(config_tab, text="Install Edge", command=lambda: install_browser("com.microsoft.Edge", "Edge"))
-
-uninstall_chrome_btn = ttk.Button(config_tab, text="Uninstall Chrome", command=lambda: uninstall_browser("com.google.Chrome", "Chrome"))
-uninstall_edge_btn = ttk.Button(config_tab, text="Uninstall Edge", command=lambda: uninstall_browser("com.microsoft.Edge", "Edge"))
-
 ttk.Button(config_tab, text="Check Permissions", command=check_permissions).pack(pady=5)
+ttk.Button(config_tab, text="Remove Permissions", command=remove_permissions).pack(pady=5)
 
 update_browser_options()
 
@@ -152,23 +127,41 @@ update_browser_options()
 manual_tab = ttk.Frame(notebook)
 notebook.add(manual_tab, text="Manual")
 
-ttk.Button(manual_tab, text="Paste", command=lambda: title_entry.insert(tk.END, root.clipboard_get())).pack(side=tk.LEFT, padx=5)
+ttk.Label(manual_tab, text="Game Title:").pack(pady=5)
 title_entry = ttk.Entry(manual_tab, width=50)
 title_entry.pack(pady=5)
 
-ttk.Button(manual_tab, text="Paste", command=lambda: url_entry.insert(tk.END, root.clipboard_get())).pack(side=tk.LEFT, padx=5)
+ttk.Button(manual_tab, text="Paste", command=lambda: title_entry.insert(tk.END, root.clipboard_get())).pack(pady=5)
+
+ttk.Label(manual_tab, text="Game URL:").pack(pady=5)
 url_entry = ttk.Entry(manual_tab, width=50)
 url_entry.pack(pady=5)
 
-### ABOUT TAB ###
-about_tab = ttk.Frame(notebook)
-notebook.add(about_tab, text="About")
+ttk.Button(manual_tab, text="Paste", command=lambda: url_entry.insert(tk.END, root.clipboard_get())).pack(pady=5)
 
-ttk.Label(about_tab, text=f"SteamOS Shortcut Automation Tool {BUILD_VERSION}\nGitHub:").pack(pady=5)
-ttk.Button(about_tab, text="Open GitHub", command=lambda: webbrowser.open("https://github.com/LordingtheVoid")).pack(pady=5)
+### BATCH TAB ###
+batch_tab = ttk.Frame(notebook)
+notebook.add(batch_tab, text="Batch")
+
+batch_preview = tk.Text(batch_tab, width=70, height=10, state=tk.DISABLED)
+batch_preview.pack(pady=10)
+
+def load_batch_preview():
+    """Load batch file preview."""
+    if os.path.exists("batchadd.txt"):
+        with open("batchadd.txt", "r") as f:
+            data = f.readlines()
+            readable_data = "\n".join([f"{line.split(': ')[0]} - {line.split(': ')[1].replace('http://', '').replace('https://', '')[:7]}...{line.split(': ')[1][-7:]}" for line in data if ": " in line])
+            batch_preview.config(state=tk.NORMAL)
+            batch_preview.delete("1.0", tk.END)
+            batch_preview.insert(tk.END, readable_data)
+            batch_preview.config(state=tk.DISABLED)
+    else:
+        messagebox.showerror("Error", "batchadd.txt not found.")
+
+ttk.Button(batch_tab, text="Load Batch Preview", command=load_batch_preview).pack(pady=5)
 
 # Restart Steam Button
-ttk.Button(root, text="Save & Restart Steam", command=lambda: [save_config(browser_var.get(), last_collection), restart_steam()]).pack(pady=10)
+ttk.Button(root, text="Save & Restart Steam", command=restart_steam).pack(pady=10)
 
-update_browser_options()
 root.mainloop()
