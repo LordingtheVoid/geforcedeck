@@ -25,20 +25,33 @@ def save_config(browser, collection):
         config.write(configfile)
 
 def check_installed_browsers():
-    """Return installed browsers."""
+    """Return installed browsers dynamically."""
     try:
         result = subprocess.run(["flatpak", "list", "--app"], stdout=subprocess.PIPE, text=True)
         output = result.stdout
     except Exception:
         output = ""
-    
+
     browsers = {}
     if "com.google.Chrome" in output:
         browsers["Chrome"] = "com.google.Chrome"
     if "com.microsoft.Edge" in output:
         browsers["Edge"] = "com.microsoft.Edge"
-    
+
     return browsers
+
+def install_browser(app_id, browser_name):
+    """Install missing browser."""
+    if messagebox.askyesno(f"Install {browser_name}", f"{browser_name} is not installed. Install it now?"):
+        subprocess.run(["flatpak", "install", "--user", "-y", "flathub", app_id])
+        messagebox.showinfo("Success", f"{browser_name} installed! Restart the script to use it.")
+
+def uninstall_browser(app_id, browser_name):
+    """Uninstall browser with confirmation."""
+    if messagebox.askyesno(f"Uninstall {browser_name}", f"Are you sure you want to remove {browser_name}?"):
+        subprocess.run(["flatpak", "uninstall", "--user", "-y", app_id])
+        messagebox.showinfo("Success", f"{browser_name} has been uninstalled.")
+        update_browser_options()
 
 def check_permissions(app_id):
     """Check if browser has correct permissions."""
@@ -62,36 +75,17 @@ def restart_steam():
         subprocess.Popen(["steam"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, preexec_fn=os.setpgrp)
         messagebox.showinfo("Info", "Steam restarted. Check your library for new shortcuts!")
 
-# --- Load & Save Shortcuts ---
-def load_shortcuts():
-    userdata_path = "/home/deck/.local/share/Steam/userdata"
-    user_ids = [d for d in os.listdir(userdata_path) if os.path.isdir(os.path.join(userdata_path, d))]
-    
-    if len(user_ids) == 1:
-        user_id = user_ids[0]
-    else:
-        messagebox.showerror("Error", "Multiple user IDs found, please specify.")
-        exit(1)
-    
-    global shortcuts_path
-    shortcuts_path = os.path.join(userdata_path, user_id, "config", "shortcuts.vdf")
-    
-    if os.path.exists(shortcuts_path) and os.path.getsize(shortcuts_path) > 0:
-        try:
-            with open(shortcuts_path, "rb") as f:
-                shortcuts = vdf.binary_load(f)
-        except SyntaxError:
-            shortcuts = {"shortcuts": {}}
-    else:
-        shortcuts = {"shortcuts": {}}
-    
-    return shortcuts
+def update_browser_options():
+    """Dynamically update available browser options."""
+    installed = check_installed_browsers()
+    browser_menu["menu"].delete(0, "end")
+    for browser in installed.keys():
+        browser_menu["menu"].add_command(label=browser, command=lambda v=browser: browser_var.set(v))
 
 # --- GUI Setup ---
 root = tk.Tk()
 root.title("GeForce Now Shortcut Automation")
 
-# Tabbed Notebook
 notebook = ttk.Notebook(root)
 notebook.pack(expand=True, fill="both")
 
@@ -110,6 +104,8 @@ browser_menu = ttk.OptionMenu(config_tab, browser_var, *installed_browsers.keys(
 browser_menu.pack(pady=5)
 
 ttk.Button(config_tab, text="Check Permissions", command=lambda: fix_permissions(installed_browsers.get(browser_var.get()))).pack(pady=5)
+ttk.Button(config_tab, text="Uninstall Chrome", command=lambda: uninstall_browser("com.google.Chrome", "Chrome")).pack(pady=5)
+ttk.Button(config_tab, text="Uninstall Edge", command=lambda: uninstall_browser("com.microsoft.Edge", "Edge")).pack(pady=5)
 
 ### MANUAL TAB ###
 manual_tab = ttk.Frame(notebook)
@@ -156,26 +152,8 @@ def load_batch_preview():
         messagebox.showerror("Error", "batchadd.txt not found.")
 
 ttk.Button(batch_tab, text="Load Batch Preview", command=load_batch_preview).pack(pady=5)
+ttk.Button(batch_tab, text="Process Batch", command=lambda: messagebox.showinfo("Processing", "Batch processing not yet implemented")).pack(pady=10)
 
-def process_batch():
-    """Process batch additions."""
-    if os.path.exists("batchadd.txt"):
-        with open("batchadd.txt", "r") as f:
-            batch_entries = f.readlines()
-
-        with open("batchbackup.txt", "a") as backup_file:
-            for line in batch_entries:
-                if ": " in line:
-                    title, url = line.split(": ", 1)
-                    backup_file.write(f"{title}: {url}")
-        
-        messagebox.showinfo("Success", "Batch processing complete. Games backed up.")
-    else:
-        messagebox.showerror("Error", "batchadd.txt not found.")
-
-ttk.Button(batch_tab, text="Process Batch", command=process_batch).pack(pady=10)
-
-# Save Preferences & Restart Steam
 ttk.Button(root, text="Save & Restart Steam", command=lambda: [save_config(browser_var.get(), last_collection), restart_steam()]).pack(pady=10)
 
 root.mainloop()
