@@ -1,3 +1,5 @@
+# GeForce Now Shortcut Automation - Build v1.1
+
 import os
 import time
 import subprocess
@@ -5,6 +7,9 @@ import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
 import vdf
 import configparser
+
+# Version Tracking
+BUILD_VERSION = "v1.1"
 
 # --- Utility Functions ---
 CONFIG_FILE = "config.ini"
@@ -54,7 +59,21 @@ def uninstall_browser(app_id, browser_name):
         messagebox.showinfo("Success", f"{browser_name} has been uninstalled.")
         update_browser_options()  # Refresh dropdown
 
-def check_permissions(app_id):
+def check_permissions():
+    """Check permissions for all installed browsers and apply fixes if needed."""
+    installed = check_installed_browsers()
+    fixed = []
+    for browser, app_id in installed.items():
+        if not check_permissions_single(app_id):
+            fix_permissions(app_id)
+            fixed.append(browser)
+    
+    if not fixed:
+        messagebox.showinfo("Permissions Check", "All installed browsers have correct permissions.")
+    else:
+        messagebox.showinfo("Permissions Fixed", f"Permissions updated for: {', '.join(fixed)}")
+
+def check_permissions_single(app_id):
     """Check if browser has correct permissions."""
     try:
         result = subprocess.run(["flatpak", "info", "--show-permissions", app_id], stdout=subprocess.PIPE, text=True)
@@ -65,7 +84,6 @@ def check_permissions(app_id):
 def fix_permissions(app_id):
     """Apply missing permissions."""
     subprocess.run(["flatpak", "override", "--user", "--filesystem=/run/udev:ro", app_id])
-    messagebox.showinfo("Permissions Fixed", f"Permissions updated for {app_id}")
 
 def restart_steam():
     """Restart Steam only if it's running."""
@@ -85,9 +103,20 @@ def update_browser_options():
     if browser_var.get() not in installed:
         browser_var.set(next(iter(installed), "Chrome"))  # Default to first available browser
 
+    # Show install buttons if browser is missing
+    if "Chrome" not in installed:
+        install_chrome_btn.pack()
+    else:
+        install_chrome_btn.pack_forget()
+
+    if "Edge" not in installed:
+        install_edge_btn.pack()
+    else:
+        install_edge_btn.pack_forget()
+
 # --- GUI Setup ---
 root = tk.Tk()
-root.title("GeForce Now Shortcut Automation")
+root.title(f"GeForce Now Shortcut Automation {BUILD_VERSION}")
 
 notebook = ttk.Notebook(root)
 notebook.pack(expand=True, fill="both")
@@ -106,37 +135,12 @@ ttk.Label(config_tab, text="Select Browser:").pack(pady=5)
 browser_menu = ttk.OptionMenu(config_tab, browser_var, *installed_browsers.keys())
 browser_menu.pack(pady=5)
 
-ttk.Button(config_tab, text="Check Permissions", command=lambda: fix_permissions(installed_browsers.get(browser_var.get()))).pack(pady=5)
-ttk.Button(config_tab, text="Uninstall Chrome", command=lambda: uninstall_browser("com.google.Chrome", "Chrome")).pack(pady=5)
-ttk.Button(config_tab, text="Uninstall Edge", command=lambda: uninstall_browser("com.microsoft.Edge", "Edge")).pack(pady=5)
+ttk.Button(config_tab, text="Check Permissions", command=check_permissions).pack(pady=5)
 
-### MANUAL TAB ###
-manual_tab = ttk.Frame(notebook)
-notebook.add(manual_tab, text="Manual")
+install_chrome_btn = ttk.Button(config_tab, text="Install Chrome", command=lambda: install_browser("com.google.Chrome", "Chrome"))
+install_edge_btn = ttk.Button(config_tab, text="Install Edge", command=lambda: install_browser("com.microsoft.Edge", "Edge"))
 
-ttk.Label(manual_tab, text="Game Title:").pack(pady=5)
-title_entry = ttk.Entry(manual_tab, width=50)
-title_entry.pack(pady=5)
-
-ttk.Label(manual_tab, text="Game URL:").pack(pady=5)
-url_entry = ttk.Entry(manual_tab, width=50)
-url_entry.pack(pady=5)
-
-# Enable copy-paste functionality
-title_entry.bind("<Control-v>", lambda e: title_entry.insert(tk.INSERT, root.clipboard_get()))
-url_entry.bind("<Control-v>", lambda e: url_entry.insert(tk.INSERT, root.clipboard_get()))
-
-def add_game():
-    title = title_entry.get().strip()
-    url = url_entry.get().strip()
-    if title and url:
-        messagebox.showinfo("Success", f"Added {title} to Steam shortcuts.")
-        title_entry.delete(0, tk.END)
-        url_entry.delete(0, tk.END)
-    else:
-        messagebox.showwarning("Warning", "Please enter both game title and URL.")
-
-ttk.Button(manual_tab, text="Add Game", command=add_game).pack(pady=10)
+update_browser_options()
 
 ### BATCH TAB ###
 batch_tab = ttk.Frame(notebook)
@@ -159,8 +163,8 @@ def load_batch_preview():
         messagebox.showerror("Error", "batchadd.txt not found.")
 
 ttk.Button(batch_tab, text="Load Batch Preview", command=load_batch_preview).pack(pady=5)
-ttk.Button(batch_tab, text="Process Batch", command=lambda: messagebox.showinfo("Processing", "Batch processing not yet implemented")).pack(pady=10)
 
+# Restart Steam Button
 ttk.Button(root, text="Save & Restart Steam", command=lambda: [save_config(browser_var.get(), last_collection), restart_steam()]).pack(pady=10)
 
 update_browser_options()  # Ensure dropdown is updated on launch
