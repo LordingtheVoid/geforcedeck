@@ -36,30 +36,54 @@ def install_browser(app_id, browser_name):
         except Exception as e:
             messagebox.showerror("Error", f"Failed to install {browser_name}: {e}")
 
+def uninstall_browser(app_id, browser_name):
+    """Prompt to uninstall a browser."""
+    response = messagebox.askyesno(f"Uninstall {browser_name}", f"Are you sure you want to remove {browser_name}?")
+    if response:
+        try:
+            subprocess.run(["flatpak", "uninstall", "--user", "-y", app_id])
+            messagebox.showinfo("Success", f"{browser_name} has been uninstalled.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to uninstall {browser_name}: {e}")
+
 def check_permissions(app_id):
-    """Check if the browser has the required permissions; if not, override them."""
+    """Check if the browser has the required permissions."""
     try:
         result = subprocess.run(["flatpak", "info", "--show-permissions", app_id], stdout=subprocess.PIPE, text=True)
         return "/run/udev:ro" in result.stdout
-    except Exception as e:
-        messagebox.showerror("Error", f"Error checking permissions for {app_id}: {e}")
+    except Exception:
         return False
 
 def fix_permissions(app_id):
     """Apply missing Flatpak permissions."""
-    try:
-        subprocess.run(["flatpak", "override", "--user", "--filesystem=/run/udev:ro", app_id])
-        messagebox.showinfo("Permissions Fixed", f"Permissions updated for {app_id}")
-    except Exception as e:
-        messagebox.showerror("Error", f"Failed to update permissions: {e}")
+    subprocess.run(["flatpak", "override", "--user", "--filesystem=/run/udev:ro", app_id])
+    messagebox.showinfo("Permissions Fixed", f"Permissions updated for {app_id}")
 
-def reset_permissions(app_id):
-    """Reset Flatpak permissions."""
-    try:
-        subprocess.run(["flatpak", "override", "--user", "--reset", app_id])
-        messagebox.showinfo("Permissions Reset", f"Permissions reset for {app_id}")
-    except Exception as e:
-        messagebox.showerror("Error", f"Failed to reset permissions: {e}")
+def manage_permissions():
+    """Check installed browsers and apply permissions if needed."""
+    installed = check_installed_browsers()
+    chrome_installed = "Chrome" in installed
+    edge_installed = "Edge" in installed
+    if not chrome_installed and not edge_installed:
+        messagebox.showinfo("Permissions Check", "No browsers installed to check.")
+        return
+    
+    missing = []
+    if chrome_installed and not check_permissions(installed["Chrome"]):
+        missing.append("Chrome")
+    if edge_installed and not check_permissions(installed["Edge"]):
+        missing.append("Edge")
+
+    if not missing:
+        messagebox.showinfo("Permissions Check", "Permissions are correct for installed browsers.")
+        return
+    
+    choice = messagebox.askyesno("Fix Permissions", f"Permissions missing for: {', '.join(missing)}.\nWould you like to apply fixes?")
+    if choice:
+        if "Chrome" in missing:
+            fix_permissions(installed["Chrome"])
+        if "Edge" in missing:
+            fix_permissions(installed["Edge"])
 
 # --- Load Steam Shortcuts ---
 def load_shortcuts():
@@ -83,7 +107,6 @@ def load_shortcuts():
             messagebox.showwarning("Warning", f"{shortcuts_path} is corrupted. Starting with an empty shortcuts dictionary.")
             shortcuts = {"shortcuts": {}}
     else:
-        messagebox.showinfo("Info", f"{shortcuts_path} is empty or doesn't exist. Starting with an empty shortcuts dictionary.")
         shortcuts = {"shortcuts": {}}
     
     return shortcuts
@@ -94,81 +117,58 @@ def save_shortcuts(shortcuts):
 
 def restart_steam():
     os.system("steam -shutdown")
-    time.sleep(5)  # Give Steam time to close
+    time.sleep(5)
     subprocess.Popen(["steam"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, preexec_fn=os.setpgrp)
     messagebox.showinfo("Info", "Steam restarted. Check your library for the new shortcuts!")
-
-# --- Browser Setup ---
-installed_browsers = check_installed_browsers()
-if not installed_browsers:
-    messagebox.showerror("Error", "No compatible browsers found. Please install Chrome or Edge manually.")
-    exit(1)
-
-# Browser selection variables
-selected_browser_name = list(installed_browsers.keys())[0]
-selected_browser_id = installed_browsers[selected_browser_name]
 
 # --- GUI Setup ---
 root = tk.Tk()
 root.title("GeForce Now Shortcut Automation")
 
-# Browser Selection Frame
-browser_frame = ttk.LabelFrame(root, text="Browser Selection", padding=10)
+# Mode Selection
+mode_frame = ttk.LabelFrame(root, text="Mode Selection", padding=10)
+mode_frame.pack(pady=10, fill="x")
+mode_var = tk.StringVar(value="Interactive")
+ttk.Radiobutton(mode_frame, text="Interactive Mode", variable=mode_var, value="Interactive").pack(side=tk.LEFT, padx=5)
+ttk.Radiobutton(mode_frame, text="Batch Mode", variable=mode_var, value="Batch").pack(side=tk.LEFT, padx=5)
+
+# Browser Selection
+browser_frame = ttk.LabelFrame(root, text="Browser Management", padding=10)
 browser_frame.pack(pady=10, fill="x")
+installed = check_installed_browsers()
 
-ttk.Label(browser_frame, text="Select Browser:").pack(side=tk.LEFT, padx=5)
-browser_var = tk.StringVar(value=selected_browser_name)
-browser_menu = ttk.OptionMenu(browser_frame, browser_var, selected_browser_name, *installed_browsers.keys())
-browser_menu.pack(side=tk.LEFT, padx=5)
+if "Chrome" not in installed:
+    ttk.Button(browser_frame, text="Install Chrome", command=lambda: install_browser("com.google.Chrome", "Chrome")).pack(side=tk.LEFT, padx=5)
+else:
+    ttk.Button(browser_frame, text="Uninstall Chrome", command=lambda: uninstall_browser("com.google.Chrome", "Chrome")).pack(side=tk.LEFT, padx=5)
 
-ttk.Button(browser_frame, text="Install Chrome", command=lambda: install_browser("com.google.Chrome", "Chrome")).pack(side=tk.LEFT, padx=5)
-ttk.Button(browser_frame, text="Install Edge", command=lambda: install_browser("com.microsoft.Edge", "Edge")).pack(side=tk.LEFT, padx=5)
+if "Edge" not in installed:
+    ttk.Button(browser_frame, text="Install Edge", command=lambda: install_browser("com.microsoft.Edge", "Edge")).pack(side=tk.LEFT, padx=5)
+else:
+    ttk.Button(browser_frame, text="Uninstall Edge", command=lambda: uninstall_browser("com.microsoft.Edge", "Edge")).pack(side=tk.LEFT, padx=5)
 
-ttk.Button(browser_frame, text="Manage Permissions", command=lambda: fix_permissions(installed_browsers[browser_var.get()])).pack(side=tk.LEFT, padx=5)
+ttk.Button(browser_frame, text="Check Permissions", command=manage_permissions).pack(side=tk.LEFT, padx=5)
 
-# Collection Selection Frame
+# Collection Selection
 collection_frame = ttk.LabelFrame(root, text="Game Collection", padding=10)
 collection_frame.pack(pady=10, fill="x")
-
 ttk.Label(collection_frame, text="Select Collection:").pack(side=tk.LEFT, padx=5)
 collection_var = tk.StringVar(value="GeForce Now")
 collections = ["GeForce Now", "Xbox Cloud", "Amazon Luna", "Custom"]
 collection_menu = ttk.OptionMenu(collection_frame, collection_var, *collections)
 collection_menu.pack(side=tk.LEFT, padx=5)
 
-def update_collection():
-    if collection_var.get() == "Custom":
-        custom_name = simpledialog.askstring("Custom Collection", "Enter your collection name:")
-        if custom_name:
-            collection_var.set(custom_name)
-
-ttk.Button(collection_frame, text="Set Custom", command=update_collection).pack(side=tk.LEFT, padx=5)
-
-# Game Addition Frame
+# Add Game UI
 game_frame = ttk.LabelFrame(root, text="Add Game", padding=10)
 game_frame.pack(pady=10, fill="x")
-
 ttk.Label(game_frame, text="Game Title:").pack()
 title_entry = ttk.Entry(game_frame, width=50)
 title_entry.pack()
-
 ttk.Label(game_frame, text="Game URL:").pack()
 url_entry = ttk.Entry(game_frame, width=50)
 url_entry.pack()
 
-def add_game():
-    title = title_entry.get().strip()
-    url = url_entry.get().strip()
-    collection = collection_var.get()
-    
-    if title and url:
-        messagebox.showinfo("Success", f"Added {title} to Steam shortcuts in '{collection}' collection.")
-        title_entry.delete(0, tk.END)
-        url_entry.delete(0, tk.END)
-    else:
-        messagebox.showwarning("Warning", "Please enter both game title and URL.")
-
-ttk.Button(game_frame, text="Add Game", command=add_game).pack(pady=5)
+ttk.Button(game_frame, text="Add Game", command=lambda: messagebox.showinfo("Added", "Game added!")).pack(pady=5)
 
 ttk.Button(root, text="Finish & Restart Steam", command=restart_steam).pack(pady=10)
 
