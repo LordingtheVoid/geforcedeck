@@ -45,13 +45,14 @@ def install_browser(app_id, browser_name):
     if messagebox.askyesno(f"Install {browser_name}", f"{browser_name} is not installed. Install it now?"):
         subprocess.run(["flatpak", "install", "--user", "-y", "flathub", app_id])
         messagebox.showinfo("Success", f"{browser_name} installed! Restart the script to use it.")
+        update_browser_options()  # Refresh dropdown
 
 def uninstall_browser(app_id, browser_name):
     """Uninstall browser with confirmation."""
     if messagebox.askyesno(f"Uninstall {browser_name}", f"Are you sure you want to remove {browser_name}?"):
         subprocess.run(["flatpak", "uninstall", "--user", "-y", app_id])
         messagebox.showinfo("Success", f"{browser_name} has been uninstalled.")
-        update_browser_options()
+        update_browser_options()  # Refresh dropdown
 
 def check_permissions(app_id):
     """Check if browser has correct permissions."""
@@ -78,9 +79,11 @@ def restart_steam():
 def update_browser_options():
     """Dynamically update available browser options."""
     installed = check_installed_browsers()
-    browser_menu["menu"].delete(0, "end")
+    browser_menu["menu"].delete(0, "end")  # Clear previous options
     for browser in installed.keys():
         browser_menu["menu"].add_command(label=browser, command=lambda v=browser: browser_var.set(v))
+    if browser_var.get() not in installed:
+        browser_var.set(next(iter(installed), "Chrome"))  # Default to first available browser
 
 # --- GUI Setup ---
 root = tk.Tk()
@@ -119,6 +122,10 @@ ttk.Label(manual_tab, text="Game URL:").pack(pady=5)
 url_entry = ttk.Entry(manual_tab, width=50)
 url_entry.pack(pady=5)
 
+# Enable copy-paste functionality
+title_entry.bind("<Control-v>", lambda e: title_entry.insert(tk.INSERT, root.clipboard_get()))
+url_entry.bind("<Control-v>", lambda e: url_entry.insert(tk.INSERT, root.clipboard_get()))
+
 def add_game():
     title = title_entry.get().strip()
     url = url_entry.get().strip()
@@ -156,4 +163,5 @@ ttk.Button(batch_tab, text="Process Batch", command=lambda: messagebox.showinfo(
 
 ttk.Button(root, text="Save & Restart Steam", command=lambda: [save_config(browser_var.get(), last_collection), restart_steam()]).pack(pady=10)
 
+update_browser_options()  # Ensure dropdown is updated on launch
 root.mainloop()
