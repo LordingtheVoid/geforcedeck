@@ -86,6 +86,15 @@ def remove_permissions():
         if choice in ["chrome", "edge", "both"]:
             messagebox.showinfo("Permissions Removed", f"Permissions removed for: {choice.capitalize()}")
 
+def restart_steam():
+    """Restart Steam only if it's running."""
+    result = subprocess.run(["pgrep", "-x", "steam"], stdout=subprocess.PIPE)
+    if result.returncode == 0:
+        os.system("steam -shutdown")
+        time.sleep(5)
+        subprocess.Popen(["steam"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, preexec_fn=os.setpgrp)
+        messagebox.showinfo("Info", "Steam restarted. Check your library for new shortcuts!")
+
 def add_luna_options(url):
     """Detect Amazon Luna URLs and append user-agent launch options if needed."""
     if "luna.amazon." in url:
